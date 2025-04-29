@@ -1,1 +1,1 @@
-# Leranify
+# Learnify
