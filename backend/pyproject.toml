@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "learnify-backend"
+version = "0.1.0"
+description = ""
+authors = ["gaviera0 <gabriel.viera@botman-ai.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.115.12"
+uvicorn = "^0.34.2"
+motor = "^3.7.0"
+pymongo = "^4.12.1"
+python-jose = "^3.4.0"
+pydantic = {extras = ["email"], version = "^2.11.4"}
+passlib = "^1.7.4"
+python-multipart = "^0.0.20"
+bcrypt = "^4.3.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
