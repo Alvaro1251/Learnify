@@ -94,7 +94,7 @@ El MVP contempla las siguientes funcionalidades:
 
 ---
 
-## 📊 Tecnologías Sugeridas (a confirmar)
+## 📊 Tecnologías
 
 * **Frontend**: 
 * **Backend**: 
