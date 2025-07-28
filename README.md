@@ -116,7 +116,7 @@ El MVP contempla las siguientes funcionalidades:
 ## Segunda Presentación
 * [x] Diagrama de Dominio
 * [x] Diagrama E-R
-* [ ] Diagrama de estados
+* [x] Diagrama de estados
 * [ ] Componentes
 * [ ] Arquitectura
 * [ ] Pantallas Principales y Despliegue
