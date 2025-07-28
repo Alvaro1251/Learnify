@@ -113,9 +113,16 @@ El MVP contempla las siguientes funcionalidades:
 * [ ] Pruebas y validaciones
 
 ---
-
+## Segunda Presentación
+* [x] Diagrama de Dominio
+* [x] Diagrama E-R
+* [ ] Diagrama de estados
+* [ ] Componentes
+* [ ] Arquitectura
+* [ ] Pantallas Principales y Despliegue
+      
 ## 📏 Equipo de Desarrollo
-
+---
 * \[Budano, Bautista]
 * \[Perrino, Fabrizio]
 * \[Ravachino, Ramiro]
