@@ -4,4 +4,5 @@ motor
 pymongo
 python-jose[cryptography]
 passlib[bcrypt]
-python-multipart 
+python-multipart
+email-validator 
