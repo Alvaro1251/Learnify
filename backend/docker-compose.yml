@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: learnify_mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: learnify
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - learnify_network
+
+  backend:
+    build: .
+    container_name: learnify_backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mongodb
+    environment:
+      MONGODB_URL: mongodb://admin:password@mongodb:27017/learnify?authSource=admin
+      MONGODB_DB_NAME: learnify
+    volumes:
+      - .:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - learnify_network
+
+volumes:
+  mongodb_data:
+
+networks:
+  learnify_network:
+    driver: bridge
