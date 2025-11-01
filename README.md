@@ -96,30 +96,13 @@ El MVP contempla las siguientes funcionalidades:
 
 ## 📊 Tecnologías
 
-* **Frontend**: 
-* **Backend**: 
-* **Base de Datos**: 
-* **Autenticación**: 
-* **Versionado**: Git + GitHub
+* **Frontend**: React + Tailwind CSS
+* **Backend**: FastAPI (Python) 
+* **Base de Datos**: MongoDB (modelo NoSQL con Pydantic)
+* **Autenticación**: JWT (JSON Web Tokens)
+* **Versionado**: Git + GitHub 
 
 ---
-
-## 📆 Estado del Proyecto
-
-* [x] Idea definida
-* [x] Casos de uso y requisitos documentados
-* [x] Primeras interfaces maquetadas
-* [ ] Desarrollo del MVP (en curso)
-* [ ] Pruebas y validaciones
-
----
-## Segunda Presentación
-* [x] Diagrama de Dominio
-* [x] Diagrama E-R
-* [x] Diagrama de estados
-* [x] Componentes
-* [x] Arquitectura
-* [ ] Pantallas Principales y Despliegue
       
 ## 📏 Equipo de Desarrollo
 ---
