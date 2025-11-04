@@ -19,7 +19,8 @@ Crear un espacio centralizado, simple y ordenado donde los estudiantes puedan:
 * Interactuar con otros usuarios en grupos y foros
 
 ---
-##Presentacion en Canva: https://www.canva.com/design/DAG3lQSK89g/84kv9VjQwpUFf_ksI-71xQ/edit?utm_content=DAG3lQSK89g&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton
+## Presentacion en Canva:
+https://www.canva.com/design/DAG3lQSK89g/84kv9VjQwpUFf_ksI-71xQ/edit?utm_content=DAG3lQSK89g&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton
 ---
 
 ## 📅 Alcance Inicial
