@@ -1,0 +1,301 @@
+"use client"
+
+import { useEffect, useState, useMemo } from "react"
+import { adminApi, authApi, UserProfile, ApiError } from "@/lib/api"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Card, CardContent } from "@/components/ui/card"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Loader2, X } from "lucide-react"
+import { toast } from "sonner"
+
+interface AdminPanelProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}
+
+interface FiltersState {
+  search: string
+  role: string
+}
+
+const DEFAULT_FILTERS: FiltersState = {
+  search: "",
+  role: "",
+}
+
+export function AdminPanel({ open, onOpenChange }: AdminPanelProps) {
+  const [users, setUsers] = useState<UserProfile[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
+  const [filters, setFilters] = useState<FiltersState>(DEFAULT_FILTERS)
+
+  const filteredUsers = useMemo(() => {
+    const search = filters.search.trim().toLowerCase()
+    const roleFilter = filters.role.trim().toLowerCase()
+
+    return users.filter((user) => {
+      const fullName = user.full_name && user.last_name
+        ? `${user.full_name} ${user.last_name}`.toLowerCase()
+        : ""
+      const email = user.email?.toLowerCase() || ""
+      
+      const matchesSearch =
+        search.length === 0 ||
+        fullName.includes(search) ||
+        email.includes(search)
+
+      const matchesRole =
+        roleFilter.length === 0 ||
+        (user.role || "user").toLowerCase() === roleFilter
+
+      return matchesSearch && matchesRole
+    })
+  }, [users, filters])
+
+  const activeFiltersCount = useMemo(() => {
+    let count = 0
+    if (filters.search.trim().length > 0) count += 1
+    if (filters.role.trim().length > 0) count += 1
+    return count
+  }, [filters])
+
+  const loadUsers = async () => {
+    setIsLoading(true)
+    try {
+      const token = localStorage.getItem("auth_token")
+      if (!token) {
+        toast.error("No estás autenticado")
+        return
+      }
+      const usersList = await adminApi.getAllUsers(token)
+      setUsers(usersList)
+    } catch (error) {
+      console.error("Error loading users:", error)
+      if (error instanceof ApiError) {
+        toast.error(error.message || "Error al cargar usuarios")
+      } else {
+        toast.error("Error al cargar usuarios")
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (open) {
+      loadUsers()
+    }
+  }, [open])
+
+  const handleRoleChange = async (userId: string, newRole: "user" | "moderator" | "admin") => {
+    setUpdatingUserId(userId)
+    try {
+      const token = localStorage.getItem("auth_token")
+      if (!token) {
+        toast.error("No estás autenticado")
+        return
+      }
+      await adminApi.updateUserRole(token, userId, newRole)
+      toast.success("Rol actualizado correctamente")
+      // Recargar la lista de usuarios
+      await loadUsers()
+    } catch (error) {
+      console.error("Error updating role:", error)
+      if (error instanceof ApiError) {
+        toast.error(error.message || "Error al actualizar el rol")
+      } else {
+        toast.error("Error al actualizar el rol")
+      }
+    } finally {
+      setUpdatingUserId(null)
+    }
+  }
+
+  const getRoleBadgeVariant = (role?: string) => {
+    switch (role) {
+      case "admin":
+        return "destructive"
+      case "moderator":
+        return "default"
+      default:
+        return "secondary"
+    }
+  }
+
+  const getRoleLabel = (role?: string) => {
+    switch (role) {
+      case "admin":
+        return "Admin"
+      case "moderator":
+        return "Moderador"
+      default:
+        return "Usuario"
+    }
+  }
+
+  const handleResetFilters = () => {
+    setFilters(DEFAULT_FILTERS)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Gestión de Usuarios</DialogTitle>
+          <DialogDescription>
+            Administra los roles de los usuarios del sistema
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Filtros */}
+        <div className="space-y-4 border-b pb-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Buscar por nombre o email
+              </label>
+              <Input
+                placeholder="Nombre, apellido, email..."
+                value={filters.search}
+                onChange={(e) =>
+                  setFilters((prev) => ({ ...prev, search: e.target.value }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Filtrar por rol
+              </label>
+              <Select
+                value={filters.role || "all"}
+                onValueChange={(value) =>
+                  setFilters((prev) => ({ ...prev, role: value === "all" ? "" : value }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Todos los roles" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los roles</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="moderator">Moderador</SelectItem>
+                  <SelectItem value="user">Usuario</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {activeFiltersCount > 0 ? (
+                <span>
+                  {activeFiltersCount} {activeFiltersCount === 1 ? "filtro" : "filtros"} aplicados
+                </span>
+              ) : (
+                <span>Sin filtros aplicados</span>
+              )}
+              {filters.role && (
+                <Badge variant="secondary">
+                  {getRoleLabel(filters.role)}
+                </Badge>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleResetFilters}
+              disabled={activeFiltersCount === 0}
+            >
+              <X className="h-4 w-4 mr-2" />
+              Limpiar filtros
+            </Button>
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin" />
+          </div>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {filteredUsers.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                {users.length === 0
+                  ? "No hay usuarios"
+                  : activeFiltersCount > 0
+                    ? "No se encontraron usuarios con los filtros aplicados"
+                    : "No hay usuarios"}
+              </div>
+            ) : (
+              <>
+                {activeFiltersCount > 0 && (
+                  <div className="text-sm text-muted-foreground">
+                    Mostrando {filteredUsers.length} de {users.length} usuarios
+                  </div>
+                )}
+                {filteredUsers.map((user) => (
+                <Card key={user.id || user._id}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium">
+                          {user.full_name && user.last_name
+                            ? `${user.full_name} ${user.last_name}`
+                            : user.email}
+                        </div>
+                        <div className="text-sm text-muted-foreground truncate">
+                          {user.email}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Badge variant={getRoleBadgeVariant(user.role)}>
+                          {getRoleLabel(user.role)}
+                        </Badge>
+                        <Select
+                          value={user.role || "user"}
+                          onValueChange={(value) =>
+                            handleRoleChange(user.id || user._id || "", value as "user" | "moderator" | "admin")
+                          }
+                          disabled={updatingUserId === (user.id || user._id)}
+                        >
+                          <SelectTrigger className="w-32">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="user">Usuario</SelectItem>
+                            <SelectItem value="moderator">Moderador</SelectItem>
+                            <SelectItem value="admin">Admin</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {updatingUserId === (user.id || user._id) && (
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+

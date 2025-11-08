@@ -96,6 +96,7 @@ export function CreateNoteDialog({
           .map((tag) => tag.trim())
           .filter((tag) => tag.length > 0),
         file_url: fileUrl,
+        file_name: file.name,  // Agregar el nombre del archivo
       }
 
       const createdNote = await notesApi.createNote(token, payload)

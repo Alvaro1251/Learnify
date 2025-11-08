@@ -92,7 +92,9 @@ async def delete_post_endpoint(
     current_user=Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_database),
 ):
-    success = await delete_post(db, post_id, str(current_user.id))
+    success = await delete_post(
+        db, post_id, str(current_user.id), current_user.role
+    )
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

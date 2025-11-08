@@ -11,6 +11,7 @@ class NoteCreate(BaseModel):
     career: str = Field(..., min_length=1)
     tags: List[str] = Field(default=[])
     file_url: Optional[str] = None
+    file_name: Optional[str] = None
 
 
 class NoteUpdate(BaseModel):
@@ -21,6 +22,7 @@ class NoteUpdate(BaseModel):
     career: Optional[str] = None
     tags: Optional[List[str]] = None
     file_url: Optional[str] = None
+    file_name: Optional[str] = None
 
 
 class NoteResponse(BaseModel):
@@ -32,7 +34,11 @@ class NoteResponse(BaseModel):
     career: str
     tags: List[str]
     file_url: Optional[str]
+    file_name: Optional[str] = None
     owner: str  # Owner display name
+    likes: List[str] = Field(default=[])  # Array of user IDs who liked
+    likes_count: int = Field(default=0)  # Count of likes
+    user_liked: bool = Field(default=False)  # Whether current user liked
     created_at: datetime
     updated_at: datetime
 
@@ -49,7 +55,9 @@ class NoteInDB(BaseModel):
     career: str
     tags: List[str]
     file_url: Optional[str]
+    file_name: Optional[str] = None
     owner: str  # Owner display name
+    likes: List[str] = Field(default=[])  # Array of user IDs who liked
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

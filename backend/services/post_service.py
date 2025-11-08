@@ -376,13 +376,24 @@ async def get_user_posts(db: AsyncIOMotorDatabase, user_id: str):
     return posts
 
 
-async def delete_post(db: AsyncIOMotorDatabase, post_id: str, user_id: str) -> bool:
+async def delete_post(
+    db: AsyncIOMotorDatabase, post_id: str, user_id: str, user_role: str = "user"
+) -> bool:
+    """
+    Elimina un post. Solo el dueño puede borrarlo, excepto moderadores y admins
+    que pueden borrar cualquier post.
+    """
     posts_collection = db["posts"]
 
     try:
-        result = await posts_collection.delete_one(
-            {"_id": ObjectId(post_id), "owner": ObjectId(user_id)}
-        )
+        # Si es moderador o admin, puede borrar cualquier post
+        if user_role in ["moderator", "admin"]:
+            result = await posts_collection.delete_one({"_id": ObjectId(post_id)})
+        else:
+            # Si es usuario normal, solo puede borrar sus propios posts
+            result = await posts_collection.delete_one(
+                {"_id": ObjectId(post_id), "owner": ObjectId(user_id)}
+            )
         return result.deleted_count > 0
     except:
         return False

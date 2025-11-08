@@ -112,6 +112,10 @@ export default function PostDetailPage() {
     ? `${currentUser.full_name} ${currentUser.last_name}`.trim()
     : null
   const isOwner = currentUserFullName && post.owner === currentUserFullName
+  
+  // Check if user is moderator or admin (can delete any post)
+  const isModeratorOrAdmin = currentUser?.role === "moderator" || currentUser?.role === "admin"
+  const canDelete = isOwner || isModeratorOrAdmin
 
   return (
     <main className="container mx-auto py-10">
@@ -146,12 +150,12 @@ export default function PostDetailPage() {
                 </div>
               </div>
               {/* Delete Icon Button */}
-              {isOwner && (
+              {canDelete && (
                 <button
                   onClick={handleDelete}
                   disabled={isDeleting}
                   className="flex-shrink-0 p-1 hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Eliminar publicación"
+                  title={isOwner ? "Eliminar publicación" : "Eliminar publicación (Moderador)"}
                 >
                   <Trash2 className="h-5 w-5 text-destructive" />
                 </button>

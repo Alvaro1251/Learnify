@@ -3,11 +3,12 @@
 import * as React from "react"
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { BookOpenText, LogOut, MoreVertical } from "lucide-react"
+import { BookOpenText, LogOut, MoreVertical, Shield } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { CreatePostDialog } from "@/components/create-post-dialog"
 import { CreateStudyGroupDialog } from "@/components/create-study-group-dialog"
 import { CreateNoteDialog } from "@/components/create-note-dialog"
+import { AdminPanel } from "@/components/admin-panel"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -156,6 +157,7 @@ export function AppHeader() {
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false)
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false)
   const [isCreateNoteOpen, setIsCreateNoteOpen] = useState(false)
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false)
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null)
 
   useEffect(() => {
@@ -340,6 +342,18 @@ export function AppHeader() {
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
+              {currentUser?.role === "admin" && (
+                <>
+                  <DropdownMenuItem
+                    onClick={() => setIsAdminPanelOpen(true)}
+                    className="cursor-pointer gap-2"
+                  >
+                    <Shield className="h-4 w-4" />
+                    Panel de Administración
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
               <DropdownMenuItem
                 onClick={handleLogout}
                 className="cursor-pointer gap-2"
@@ -367,6 +381,10 @@ export function AppHeader() {
         open={isCreateNoteOpen}
         onOpenChange={setIsCreateNoteOpen}
         onNoteCreated={handleNoteCreated}
+      />
+      <AdminPanel
+        open={isAdminPanelOpen}
+        onOpenChange={setIsAdminPanelOpen}
       />
     </header>
   )

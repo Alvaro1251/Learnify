@@ -161,18 +161,50 @@ async def websocket_endpoint(
             content = data.get("content")
 
             if sender_id and content:
-                group = await add_chat_message(db, group_id, content, sender_id)
-                if group:
-                    message_data = {
-                        "type": "message",
-                        "sender_id": sender_id,
-                        "sender": group.chat[-1].sender,
-                        "sender_name": group.chat[-1].sender,
-                        "content": content,
-                        "timestamp": str(group.chat[-1].timestamp),
-                    }
-                    await manager.broadcast(group_id, message_data)
+                try:
+                    group = await add_chat_message(db, group_id, content, sender_id)
+                    if group and group.chat:
+                        last_message = group.chat[-1]
+                        # Ensure sender_name is properly set (use sender as fallback)
+                        sender_name = last_message.sender or sender_id
+                        message_data = {
+                            "type": "message",
+                            "sender_id": str(last_message.sender_id) if last_message.sender_id else sender_id,
+                            "sender": sender_name,
+                            "sender_name": sender_name,
+                            "content": content,
+                            "timestamp": str(last_message.timestamp),
+                        }
+                        await manager.broadcast(group_id, message_data)
+                    else:
+                        print(f"Failed to add message: group={group}, sender_id={sender_id}, content={content}")
+                        # Send error message back to sender
+                        await manager.send_personal_message(
+                            websocket,
+                            {
+                                "type": "error",
+                                "message": "No se pudo enviar el mensaje. Verifica que seas miembro del grupo.",
+                            },
+                        )
+                except Exception as e:
+                    print(f"Error processing chat message: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # Send error message back to sender
+                    try:
+                        await manager.send_personal_message(
+                            websocket,
+                            {
+                                "type": "error",
+                                "message": f"Error al enviar mensaje: {str(e)}",
+                            },
+                        )
+                    except:
+                        pass
     except WebSocketDisconnect:
         manager.disconnect(group_id, websocket)
     except Exception as e:
+        print(f"WebSocket error: {e}")
+        import traceback
+        traceback.print_exc()
         manager.disconnect(group_id, websocket)

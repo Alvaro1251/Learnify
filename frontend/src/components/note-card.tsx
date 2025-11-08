@@ -13,6 +13,7 @@ import {
   Link as LinkIcon,
   Download,
   Share2,
+  Heart,
 } from "lucide-react"
 
 import { Note } from "@/lib/api"
@@ -176,6 +177,10 @@ export function NoteCard({ note, onTagClick }: NoteCardProps) {
 
       <CardFooter className="flex items-center justify-between gap-3 border-t pt-4">
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 rounded-md border border-border/60 px-2.5 py-1.5 text-xs text-muted-foreground">
+            <Heart className="h-3.5 w-3.5" />
+            <span>{note.likes_count || 0}</span>
+          </div>
           <Button
             variant="ghost"
             size="icon"

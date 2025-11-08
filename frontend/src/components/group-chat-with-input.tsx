@@ -82,15 +82,17 @@ export function GroupChatWithInput({
           const message = JSON.parse(event.data)
           console.log("Received message:", message)
 
-          const senderId = message.sender_id || message.sender
+          // Ensure we have valid values for sender and sender_name
+          const senderId = message.sender_id || message.sender || "unknown"
           const senderName =
             message.sender_name ||
             message.sender_full_name ||
-            message.sender
+            message.sender ||
+            "Usuario desconocido"
           const newMessage: ChatMessage = {
             sender: senderId,
             sender_name: senderName,
-            content: message.content,
+            content: message.content || "",
             timestamp: message.timestamp || new Date().toISOString(),
           }
 
@@ -211,7 +213,7 @@ export function GroupChatWithInput({
     }
   }
 
-  const getInitials = (name: string | undefined, fallbackId: string) => {
+  const getInitials = (name: string | undefined, fallbackId: string | undefined) => {
     if (name && name.trim().length > 0) {
       return name
         .split(" ")
@@ -222,7 +224,9 @@ export function GroupChatWithInput({
         .slice(0, 2)
     }
 
-    return fallbackId.slice(0, 2).toUpperCase()
+    // Ensure fallbackId is a valid string
+    const safeFallback = fallbackId && typeof fallbackId === "string" ? fallbackId : "??"
+    return safeFallback.slice(0, 2).toUpperCase()
   }
 
   return (

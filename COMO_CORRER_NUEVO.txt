@@ -1,0 +1,106 @@
+╔══════════════════════════════════════════════════════════════╗
+║     🚀 CÓMO CORRER LEARNIFY NUEVO - OPCIÓN FÁCIL            ║
+╚══════════════════════════════════════════════════════════════╝
+
+OPCIÓN 1: TODO CON DOCKER (RECOMENDADO - MÁS FÁCIL)
+═══════════════════════════════════════════════════════════════
+
+Este proyecto tiene docker-compose que levanta TODO automáticamente:
+- MongoDB
+- Backend
+
+Solo necesitas ejecutar UN comando:
+
+1. Abre una terminal y ejecuta:
+   cd C:\python\Learnify-nuevo\backend
+   docker-compose up
+
+2. Espera a que termine de construir (primera vez tarda más)
+
+3. Deberías ver:
+   ✔ MongoDB corriendo
+   ✔ Backend corriendo en http://localhost:8000
+
+4. Abre en tu navegador:
+   - API Docs: http://localhost:8000/docs
+
+5. Para el frontend (en OTRA terminal):
+   cd C:\python\Learnify-nuevo\frontend
+   npm install
+   npm run dev
+
+6. Abre: http://localhost:3000
+
+═══════════════════════════════════════════════════════════════
+
+OPCIÓN 2: MANUAL (MÁS CONTROL)
+═══════════════════════════════════════════════════════════════
+
+Necesitas 3 terminales:
+
+TERMINAL 1 - MongoDB:
+───────────────────────────────────────────────────────────────
+cd C:\python\Learnify-nuevo\backend
+docker-compose up mongodb -d
+
+TERMINAL 2 - Backend:
+───────────────────────────────────────────────────────────────
+cd C:\python\Learnify-nuevo\backend
+
+# Instalar Poetry si no lo tienes:
+pip install poetry
+
+# Instalar dependencias:
+poetry install
+
+# Levantar el servidor:
+poetry run python main.py
+
+TERMINAL 3 - Frontend:
+───────────────────────────────────────────────────────────────
+cd C:\python\Learnify-nuevo\frontend
+npm install
+npm run dev
+
+═══════════════════════════════════════════════════════════════
+
+⚠️ IMPORTANTE: Este proyecto usa MongoDB con AUTENTICACIÓN
+═══════════════════════════════════════════════════════════════
+
+MongoDB tiene credenciales por defecto:
+- Usuario: admin
+- Password: password
+- Base de datos: learnify
+
+Si levantas manualmente MongoDB, asegúrate de usar estas credenciales
+o crea un archivo .env en backend/ con:
+
+MONGODB_URL=mongodb://admin:password@localhost:27017/learnify?authSource=admin
+MONGODB_DB_NAME=learnify
+JWT_SECRET_KEY=dev-secret-key
+JWT_ALGORITHM=HS256
+JWT_EXPIRATION_HOURS=24
+
+═══════════════════════════════════════════════════════════════
+
+📝 DIFERENCIAS CON EL PROYECTO VIEJO:
+═══════════════════════════════════════════════════════════════
+
+✅ Estructura más organizada (controllers, services, models)
+✅ Documentación completa en backend/documentation/
+✅ Usa Poetry para dependencias (más profesional)
+✅ MongoDB con autenticación (más seguro)
+✅ Docker-compose más completo
+✅ Frontend más completo con más funcionalidades
+
+═══════════════════════════════════════════════════════════════
+
+🛑 PARA DETENER:
+═══════════════════════════════════════════════════════════════
+
+Si usaste docker-compose:
+cd C:\python\Learnify-nuevo\backend
+docker-compose down
+
+═══════════════════════════════════════════════════════════════
+

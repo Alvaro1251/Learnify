@@ -33,6 +33,7 @@ export interface UserProfile {
   university?: string;
   birth_date?: string;
   is_active: boolean;
+  role?: string; // "user", "moderator", "admin"
   created_at: string;
 }
 
@@ -88,7 +89,11 @@ export interface Note {
   career: string;
   tags: string[];
   file_url: string;
+  file_name?: string;
   owner: string;
+  likes?: string[];
+  likes_count?: number;
+  user_liked?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -101,6 +106,7 @@ export interface CreateNoteRequest {
   career: string;
   tags: string[];
   file_url: string;
+  file_name?: string;
 }
 
 export interface NotesFilters {
@@ -152,7 +158,26 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
   if (!response.ok) {
     console.error(`API Error [${response.status}]:`, data);
-    throw new ApiError(response.status, data, data.detail || "Request failed");
+    
+    // FastAPI validation errors return detail as an array of objects
+    let errorMessage = "Request failed";
+    if (data.detail) {
+      if (Array.isArray(data.detail)) {
+        // Format validation errors
+        errorMessage = data.detail
+          .map((err: any) => {
+            const field = err.loc ? err.loc.join(".") : "campo";
+            return `${field}: ${err.msg}`;
+          })
+          .join(", ");
+      } else if (typeof data.detail === "string") {
+        errorMessage = data.detail;
+      } else {
+        errorMessage = JSON.stringify(data.detail);
+      }
+    }
+    
+    throw new ApiError(response.status, data, errorMessage);
   }
 
   return data;
@@ -268,6 +293,38 @@ export const profileApi = {
       headers: {
         Authorization: `Bearer ${token}`,
       },
+    });
+
+    const data = await handleResponse<any>(response);
+    return transformUserProfile(data);
+  },
+};
+
+export const adminApi = {
+  async getAllUsers(token: string): Promise<UserProfile[]> {
+    const response = await fetch(`${BASE_URL}/auth/users`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const data = await handleResponse<any[]>(response);
+    return data.map(transformUserProfile);
+  },
+
+  async updateUserRole(
+    token: string,
+    userId: string,
+    role: "user" | "moderator" | "admin"
+  ): Promise<UserProfile> {
+    const response = await fetch(`${BASE_URL}/auth/users/${userId}/role`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ role }),
     });
 
     const data = await handleResponse<any>(response);
@@ -485,9 +542,42 @@ export const notesApi = {
     return transformNotes(data);
   },
 
-  async getNoteDetails(noteId: string): Promise<Note> {
+  async getMostLikedNotes(limit: number = 10, token?: string): Promise<Note[]> {
+    const headers: HeadersInit = {}
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+    
+    const response = await fetch(`${BASE_URL}/notes/most-liked?limit=${limit}`, {
+      method: "GET",
+      headers,
+    });
+
+    const data = await handleResponse<any[]>(response);
+    return transformNotes(data);
+  },
+
+  async getNoteDetails(noteId: string, token?: string): Promise<Note> {
+    const headers: HeadersInit = {}
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+    
     const response = await fetch(`${BASE_URL}/notes/${noteId}`, {
       method: "GET",
+      headers,
+    });
+
+    const data = await handleResponse<any>(response);
+    return transformNote(data);
+  },
+
+  async toggleLike(token: string, noteId: string): Promise<Note> {
+    const response = await fetch(`${BASE_URL}/notes/${noteId}/like`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
     });
 
     const data = await handleResponse<any>(response);

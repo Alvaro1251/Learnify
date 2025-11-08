@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
-from typing import Optional
+from typing import Optional, Literal
 from datetime import datetime
 
 
@@ -31,6 +31,7 @@ class UserResponse(UserBase):
     university: Optional[str] = None
     birth_date: Optional[datetime] = None
     is_active: bool
+    role: str = "user"
     created_at: datetime
 
     model_config = ConfigDict(populate_by_name=True)
@@ -45,6 +46,10 @@ class TokenData(BaseModel):
     email: Optional[str] = None
 
 
+class RoleUpdate(BaseModel):
+    role: Literal["user", "moderator", "admin"]
+
+
 class UserInDB(UserBase):
     id: Optional[str] = Field(None, alias="_id")
     hashed_password: str
@@ -54,6 +59,7 @@ class UserInDB(UserBase):
     university: Optional[str] = None
     birth_date: Optional[datetime] = None
     is_active: bool = True
+    role: str = "user"  # "user", "moderator", "admin"
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     model_config = ConfigDict(populate_by_name=True)

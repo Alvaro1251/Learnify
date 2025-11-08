@@ -1,6 +1,7 @@
 from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
+from bson.errors import InvalidId
 from models.study_group import (
     StudyGroupCreate,
     StudyGroupInDB,
@@ -144,11 +145,11 @@ async def _enrich_group_with_member_names(
                 "as": "pending_requests_info",
             }
         },
-        # Lookup chat senders to get their names
+        # Lookup chat senders to get their names (using sender_id which is the ObjectId)
         {
             "$lookup": {
                 "from": "users",
-                "localField": "chat.sender",
+                "localField": "chat.sender_id",
                 "foreignField": "_id",
                 "as": "chat_senders_info",
             }
@@ -595,17 +596,39 @@ async def add_chat_message(
         sender_display = sender_display or sender_id
 
         message_data = ChatMessage(sender=sender_display, sender_id=sender_id, content=content)
+        message_dict = message_data.dict()
+        
+        # Convert sender_id to ObjectId for MongoDB lookup to work correctly
+        if message_dict.get("sender_id"):
+            try:
+                message_dict["sender_id"] = ObjectId(message_dict["sender_id"])
+            except (InvalidId, TypeError):
+                print(f"Invalid sender_id format: {message_dict.get('sender_id')}")
+                # Keep as string if conversion fails
 
+        # Verify user is a member of the group and add message in one operation
+        # MongoDB will only update if the user is in the members array
         result = await groups_collection.find_one_and_update(
-            {"_id": ObjectId(group_id), "members": ObjectId(sender_id)},  # Query by ObjectId
-            {"$push": {"chat": message_data.dict()}},
+            {"_id": ObjectId(group_id), "members": ObjectId(sender_id)},
+            {"$push": {"chat": message_dict}},
             return_document=True,
         )
+        
+        if not result:
+            print(f"Failed to add message: User {sender_id} may not be a member of group {group_id}")
+            # Double-check if group exists
+            group_exists = await groups_collection.find_one({"_id": ObjectId(group_id)})
+            if group_exists:
+                members_list = group_exists.get('members', [])
+                members_str = [str(m) if isinstance(m, ObjectId) else m for m in members_list]
+                print(f"Group exists but user {sender_id} is not in members: {members_str}")
+            else:
+                print(f"Group {group_id} does not exist")
+            return None
 
-        if result:
-            # Use helper to enrich with names
-            enriched = await _enrich_group_with_member_names(db, group_id)
-            return StudyGroupInDB(**enriched) if enriched else None
+        # Use helper to enrich with names
+        enriched = await _enrich_group_with_member_names(db, group_id)
+        return StudyGroupInDB(**enriched) if enriched else None
     except Exception as e:
         print(f"Error in add_chat_message: {e}")
         import traceback

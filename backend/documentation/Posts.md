@@ -1,5 +1,99 @@
 # Posts API Documentation
 
+## 📋 Resumen: ¿Cómo Funciona el Módulo de Publicaciones?
+
+El módulo de **Publicaciones (Posts)** es un sistema de preguntas y respuestas donde los estudiantes pueden compartir dudas, conocimientos y mantener conversaciones sobre sus materias.
+
+### 🎯 Funcionalidades Principales
+
+1. **Crear Publicaciones**: Los usuarios autenticados pueden crear publicaciones con:
+   - **Título**: Pregunta o tema de discusión (máx. 255 caracteres)
+   - **Descripción**: Detalles adicionales sobre la pregunta
+   - **Materia**: Asignatura relacionada (ej: "Programación", "Matemáticas")
+
+2. **Ver Publicaciones**: 
+   - Lista de últimas publicaciones (público, sin autenticación)
+   - Detalles completos de una publicación con todas sus respuestas
+   - Ver mis propias publicaciones (requiere autenticación)
+
+3. **Responder**: Los usuarios autenticados pueden agregar respuestas a cualquier publicación
+
+4. **Gestionar**: Los usuarios pueden eliminar sus propias publicaciones
+
+### 🔄 Flujo Típico de Uso
+
+```
+1. Usuario A crea una publicación: "¿Cómo empezar con Python?"
+   ↓
+2. Usuario B ve la lista de publicaciones más recientes
+   ↓
+3. Usuario B hace click y ve los detalles completos
+   ↓
+4. Usuario B agrega una respuesta: "Te recomiendo empezar con Codecademy"
+   ↓
+5. La respuesta aparece inmediatamente en la publicación
+```
+
+### 🏗️ Arquitectura del Sistema
+
+```
+Frontend (React/Next.js)
+    ↓ HTTP Requests
+Backend (FastAPI)
+    ├── Controllers (endpoints)
+    ├── Services (lógica de negocio)
+    └── Models (validación Pydantic)
+    ↓ MongoDB Queries
+MongoDB
+    ├── posts collection
+    └── users collection (para enriquecer datos)
+```
+
+### 💾 Estructura de Datos
+
+**En MongoDB:**
+- Los posts se guardan con `owner` como `ObjectId` (referencia al usuario)
+- Las respuestas se almacenan dentro del array `responses` del post
+- Cada respuesta también tiene `owner` como `ObjectId`
+
+**En la API:**
+- Los `ObjectId` se convierten a nombres legibles usando agregaciones MongoDB (`$lookup`)
+- Se retorna el nombre completo del usuario en lugar del ID
+
+### 🔑 Conceptos Clave
+
+1. **Autenticación JWT**: 
+   - Crear, responder y eliminar requieren token Bearer
+   - Ver listas y detalles es público
+
+2. **Optimización de Respuestas**:
+   - `GET /posts/latest` → Retorna solo `responses_count` (número)
+   - `GET /posts/{id}` → Retorna array completo de `responses`
+   - Esto mantiene la lista rápida y el detalle completo
+
+3. **Enriquecimiento de Datos**:
+   - MongoDB guarda ObjectIds
+   - Backend usa agregaciones para "unir" con la colección de usuarios
+   - API retorna nombres legibles
+
+4. **Validación**:
+   - Pydantic valida todos los datos antes de guardar
+   - Título: 1-255 caracteres
+   - Descripción y contenido: mínimo 1 carácter
+
+### 📊 Endpoints Disponibles
+
+| Endpoint | Método | Auth | Descripción |
+|----------|--------|------|-------------|
+| `/posts/create` | POST | ✅ | Crear nueva publicación |
+| `/posts/latest` | GET | ❌ | Listar últimas publicaciones |
+| `/posts/{id}` | GET | ❌ | Ver detalles de una publicación |
+| `/posts/{id}/response` | POST | ✅ | Agregar respuesta a una publicación |
+| `/posts/my/posts` | GET | ✅ | Ver mis publicaciones |
+| `/posts/{id}` | DELETE | ✅ | Eliminar mi publicación |
+
+---
+
 ## Create Post
 
 **Endpoint:** `POST /posts/create`

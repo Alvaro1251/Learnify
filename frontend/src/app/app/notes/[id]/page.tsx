@@ -10,6 +10,7 @@ import {
   Copy,
   Download,
   GraduationCap,
+  Heart,
   Loader2,
   School,
   Share2,
@@ -46,6 +47,7 @@ export default function NoteDetailPage() {
   const [note, setNote] = useState<Note | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isLiking, setIsLiking] = useState(false)
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null)
   const [resolvedFileUrl, setResolvedFileUrl] = useState<string | null>(null)
   const [resolvedFileName, setResolvedFileName] = useState<string | undefined>(undefined)
@@ -53,7 +55,8 @@ export default function NoteDetailPage() {
   const loadNote = async () => {
     setIsLoading(true)
     try {
-      const data = await notesApi.getNoteDetails(noteId)
+      const token = localStorage.getItem("auth_token")
+      const data = await notesApi.getNoteDetails(noteId, token || undefined)
       setNote(data)
     } catch (error) {
       console.error("Error loading note:", error)
@@ -86,6 +89,11 @@ export default function NoteDetailPage() {
       return
     }
 
+    // Use file_name from note if available, otherwise try to extract from localStorage
+    if (note.file_name) {
+      setResolvedFileName(note.file_name)
+    }
+
     if (note.file_url.startsWith("local-note://")) {
       const storageKey = note.file_url.replace("local-note://", "")
       const stored = localStorage.getItem(storageKey)
@@ -93,18 +101,35 @@ export default function NoteDetailPage() {
         try {
           const parsed = JSON.parse(stored) as { dataUrl?: string; name?: string }
           setResolvedFileUrl(parsed.dataUrl ?? null)
-          setResolvedFileName(parsed.name)
+          // Only set from localStorage if file_name wasn't already set
+          if (!note.file_name && parsed.name) {
+            setResolvedFileName(parsed.name)
+          }
         } catch {
           setResolvedFileUrl(null)
-          setResolvedFileName(undefined)
+          if (!note.file_name) {
+            setResolvedFileName(undefined)
+          }
         }
       } else {
         setResolvedFileUrl(null)
-        setResolvedFileName(undefined)
+        if (!note.file_name) {
+          setResolvedFileName(undefined)
+        }
       }
     } else {
       setResolvedFileUrl(note.file_url)
-      setResolvedFileName(undefined)
+      // Try to extract filename from URL if file_name not set
+      if (!note.file_name) {
+        try {
+          const url = new URL(note.file_url)
+          const pathParts = url.pathname.split("/")
+          const filename = pathParts[pathParts.length - 1]
+          setResolvedFileName(filename || undefined)
+        } catch {
+          setResolvedFileName(undefined)
+        }
+      }
     }
   }, [note])
 
@@ -154,6 +179,37 @@ export default function NoteDetailPage() {
       toast.success("Enlace copiado al portapapeles")
     } catch (clipError) {
       toast.error("No se pudo copiar el enlace")
+    }
+  }
+
+  const handleToggleLike = async () => {
+    if (!currentUser) {
+      toast.error("Debes iniciar sesión para dar like")
+      return
+    }
+
+    setIsLiking(true)
+    try {
+      const token = localStorage.getItem("auth_token")
+      if (!token) {
+        throw new Error("No authentication token found")
+      }
+      const updatedNote = await notesApi.toggleLike(token, noteId)
+      console.log("Updated note after like:", updatedNote)
+      if (updatedNote) {
+        setNote(updatedNote)
+        toast.success("Like actualizado")
+      } else {
+        // Si no hay respuesta, recargar la nota
+        await loadNote()
+      }
+    } catch (error) {
+      console.error("Error toggling like:", error)
+      toast.error("No se pudo actualizar el like")
+      // Recargar la nota en caso de error
+      await loadNote()
+    } finally {
+      setIsLiking(false)
     }
   }
 
@@ -266,14 +322,32 @@ export default function NoteDetailPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                {currentUser && (
+                  <Button
+                    variant="ghost"
+                    size="default"
+                    onClick={handleToggleLike}
+                    disabled={isLiking}
+                    className={`border border-border/60 gap-2 ${note?.user_liked ? "text-red-500" : ""}`}
+                  >
+                    <Heart className={`h-4 w-4 ${note?.user_liked ? "fill-current" : ""}`} />
+                    <span>{note?.likes_count || 0}</span>
+                    <span className="sr-only">Dar like</span>
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
-                  size="icon"
+                  size="default"
                   onClick={handleOpenFile}
                   disabled={!resolvedFileUrl}
-                  className="border border-border/60"
+                  className="border border-border/60 gap-2"
                 >
                   <Download className="h-4 w-4" />
+                  {resolvedFileName && (
+                    <span className="text-sm max-w-[150px] truncate" title={resolvedFileName}>
+                      {resolvedFileName}
+                    </span>
+                  )}
                   <span className="sr-only">Descargar archivo</span>
                 </Button>
                 <Button
