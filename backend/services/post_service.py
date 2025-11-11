@@ -126,11 +126,62 @@ async def get_post_by_id(db: AsyncIOMotorDatabase, post_id: str):
     return None
 
 
-async def get_latest_posts(db: AsyncIOMotorDatabase, limit: int = 10) -> List[dict]:
+async def get_latest_posts(
+    db: AsyncIOMotorDatabase,
+    skip: int = 0,
+    limit: int = 2,
+    search: str = None,
+    subject: str = None,
+) -> dict:
+    """
+    Obtiene posts con paginación y filtros
+    
+    Returns:
+        dict con 'posts' (lista de posts), 'total' (total de posts que cumplen los filtros),
+        'page' (página actual), 'limit' (límite por página), 'total_pages' (total de páginas)
+    """
     posts_collection = db["posts"]
 
+    # Construir el match inicial para filtros
+    match_stage = {}
+    
+    # Filtro por búsqueda (título o descripción)
+    if search and search.strip():
+        search_term = search.strip()
+        match_stage["$or"] = [
+            {"title": {"$regex": search_term, "$options": "i"}},
+            {"description": {"$regex": search_term, "$options": "i"}},
+        ]
+    
+    # Filtro por materia
+    if subject and subject.strip():
+        match_stage["subject"] = {"$regex": subject.strip(), "$options": "i"}
+
+    # Pipeline de agregación
     pipeline = [
         {"$sort": {"creation_date": -1}},
+    ]
+    
+    # Agregar match si hay filtros
+    if match_stage:
+        pipeline.insert(0, {"$match": match_stage})
+    
+    # Contar total antes de aplicar skip/limit
+    if match_stage:
+        # Si hay filtros, usar el pipeline de agregación
+        count_pipeline = [{"$match": match_stage}]
+        count_result = await posts_collection.aggregate([
+            *count_pipeline,
+            {"$count": "total"}
+        ]).to_list(length=1)
+        total = count_result[0]["total"] if count_result else 0
+    else:
+        # Si no hay filtros, usar count_documents (más eficiente)
+        total = await posts_collection.count_documents({})
+    
+    # Agregar skip, limit y lookups
+    pipeline.extend([
+        {"$skip": skip},
         {"$limit": limit},
         {
             "$lookup": {
@@ -162,10 +213,21 @@ async def get_latest_posts(db: AsyncIOMotorDatabase, limit: int = 10) -> List[di
                 "responses_count": {"$size": "$responses"},
             }
         },
-    ]
+    ])
 
     posts = await posts_collection.aggregate(pipeline).to_list(length=limit)
-    return posts
+    
+    # Calcular total de páginas
+    total_pages = (total + limit - 1) // limit if limit > 0 else 0
+    current_page = (skip // limit) + 1 if limit > 0 else 1
+    
+    return {
+        "posts": posts,
+        "total": total,
+        "page": current_page,
+        "limit": limit,
+        "total_pages": total_pages,
+    }
 
 
 async def add_response_to_post(

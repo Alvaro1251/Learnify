@@ -287,11 +287,40 @@ async def get_study_group_by_id(
     return None
 
 
-async def get_public_study_groups(db: AsyncIOMotorDatabase) -> List[dict]:
+async def get_public_study_groups(
+    db: AsyncIOMotorDatabase,
+    skip: int = 0,
+    limit: int = 2,
+    exclude_user_id: Optional[str] = None,
+) -> dict:
+    """
+    Obtiene grupos públicos con paginación
+    
+    Returns:
+        dict con 'groups' (lista de grupos), 'total' (total de grupos públicos),
+        'page' (página actual), 'limit' (límite por página), 'total_pages' (total de páginas)
+    """
     groups_collection = db["study_groups"]
 
+    # Construir query base
+    match_query = {"is_public": True}
+    
+    # Si se especifica exclude_user_id, excluir grupos donde el usuario ya es miembro
+    if exclude_user_id:
+        try:
+            user_oid = ObjectId(exclude_user_id)
+            match_query["members"] = {"$nin": [user_oid]}  # $nin = not in array
+        except (InvalidId, TypeError):
+            pass  # Si el ID no es válido, ignorar el filtro
+
+    # Contar total de grupos públicos (excluyendo los del usuario si aplica)
+    total = await groups_collection.count_documents(match_query)
+
     pipeline = [
-        {"$match": {"is_public": True}},
+        {"$match": match_query},
+        {"$sort": {"created_at": -1}},  # Ordenar por más recientes primero
+        {"$skip": skip},
+        {"$limit": limit},
         # Lookup members to get their names
         {
             "$lookup": {
@@ -364,17 +393,46 @@ async def get_public_study_groups(db: AsyncIOMotorDatabase) -> List[dict]:
         },
     ]
 
-    groups = await groups_collection.aggregate(pipeline).to_list(length=None)
+    groups = await groups_collection.aggregate(pipeline).to_list(length=limit)
     for group in groups:
         _assign_owner_name(group)
-    return groups
+    
+    # Calcular total de páginas
+    total_pages = (total + limit - 1) // limit if limit > 0 else 0
+    current_page = (skip // limit) + 1 if limit > 0 else 1
+    
+    return {
+        "groups": groups,
+        "total": total,
+        "page": current_page,
+        "limit": limit,
+        "total_pages": total_pages,
+    }
 
 
-async def get_user_study_groups(db: AsyncIOMotorDatabase, user_id: str) -> List[dict]:
+async def get_user_study_groups(
+    db: AsyncIOMotorDatabase,
+    user_id: str,
+    skip: int = 0,
+    limit: int = 2,
+) -> dict:
+    """
+    Obtiene grupos del usuario con paginación
+    
+    Returns:
+        dict con 'groups' (lista de grupos), 'total' (total de grupos del usuario),
+        'page' (página actual), 'limit' (límite por página), 'total_pages' (total de páginas)
+    """
     groups_collection = db["study_groups"]
+
+    # Contar total de grupos del usuario
+    total = await groups_collection.count_documents({"members": ObjectId(user_id)})
 
     pipeline = [
         {"$match": {"members": ObjectId(user_id)}},
+        {"$sort": {"created_at": -1}},  # Ordenar por más recientes primero
+        {"$skip": skip},
+        {"$limit": limit},
         # Lookup members to get their names
         {
             "$lookup": {
@@ -447,10 +505,21 @@ async def get_user_study_groups(db: AsyncIOMotorDatabase, user_id: str) -> List[
         },
     ]
 
-    groups = await groups_collection.aggregate(pipeline).to_list(length=None)
+    groups = await groups_collection.aggregate(pipeline).to_list(length=limit)
     for group in groups:
         _assign_owner_name(group)
-    return groups
+    
+    # Calcular total de páginas
+    total_pages = (total + limit - 1) // limit if limit > 0 else 0
+    current_page = (skip // limit) + 1 if limit > 0 else 1
+    
+    return {
+        "groups": groups,
+        "total": total,
+        "page": current_page,
+        "limit": limit,
+        "total_pages": total_pages,
+    }
 
 
 async def request_to_join(

@@ -114,6 +114,17 @@ export interface NotesFilters {
   career?: string;
   subject?: string;
   tags?: string[];
+  sort_by?: "recent" | "liked" | "oldest";
+  page?: number;
+  limit?: number;
+}
+
+export interface NotesPaginatedResponse {
+  notes: Note[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
 }
 
 export interface StudyGroup {
@@ -300,17 +311,47 @@ export const profileApi = {
   },
 };
 
+export interface UsersPaginatedResponse {
+  users: UserProfile[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+}
+
+export interface UsersQueryParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  role?: string;
+}
+
 export const adminApi = {
-  async getAllUsers(token: string): Promise<UserProfile[]> {
-    const response = await fetch(`${BASE_URL}/auth/users`, {
+  async getAllUsers(
+    token: string,
+    params?: UsersQueryParams
+  ): Promise<UsersPaginatedResponse> {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append("page", params.page.toString());
+    if (params?.limit) queryParams.append("limit", params.limit.toString());
+    if (params?.search) queryParams.append("search", params.search);
+    if (params?.role) queryParams.append("role", params.role);
+
+    const queryString = queryParams.toString();
+    const url = `${BASE_URL}/auth/users${queryString ? `?${queryString}` : ""}`;
+
+    const response = await fetch(url, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${token}`,
       },
     });
 
-    const data = await handleResponse<any[]>(response);
-    return data.map(transformUserProfile);
+    const data = await handleResponse<any>(response);
+    return {
+      ...data,
+      users: data.users.map(transformUserProfile),
+    };
   },
 
   async updateUserRole(
@@ -332,14 +373,43 @@ export const adminApi = {
   },
 };
 
+export interface PostsPaginatedResponse {
+  posts: Post[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+}
+
+export interface PostsQueryParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  subject?: string;
+}
+
 export const postsApi = {
-  async getLatestPosts(limit: number = 10): Promise<Post[]> {
-    const response = await fetch(`${BASE_URL}/posts/latest?limit=${limit}`, {
+  async getLatestPosts(
+    params?: PostsQueryParams
+  ): Promise<PostsPaginatedResponse> {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append("page", params.page.toString());
+    if (params?.limit) queryParams.append("limit", params.limit.toString());
+    if (params?.search) queryParams.append("search", params.search);
+    if (params?.subject) queryParams.append("subject", params.subject);
+
+    const queryString = queryParams.toString();
+    const url = `${BASE_URL}/posts/latest${queryString ? `?${queryString}` : ""}`;
+
+    const response = await fetch(url, {
       method: "GET",
     });
 
-    const data = await handleResponse<any[]>(response);
-    return transformPosts(data);
+    const data = await handleResponse<any>(response);
+    return {
+      ...data,
+      posts: transformPosts(data.posts),
+    };
   },
 
   async getPostDetails(postId: string): Promise<Post> {
@@ -410,14 +480,46 @@ export const postsApi = {
   },
 };
 
+export interface StudyGroupsPaginatedResponse {
+  groups: StudyGroup[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+}
+
+export interface StudyGroupsQueryParams {
+  page?: number;
+  limit?: number;
+}
+
 export const studyGroupsApi = {
-  async getPublicStudyGroups(): Promise<StudyGroup[]> {
-    const response = await fetch(`${BASE_URL}/study-groups/public`, {
+  async getPublicStudyGroups(
+    params?: StudyGroupsQueryParams,
+    token?: string
+  ): Promise<StudyGroupsPaginatedResponse> {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append("page", params.page.toString());
+    if (params?.limit) queryParams.append("limit", params.limit.toString());
+
+    const queryString = queryParams.toString();
+    const url = `${BASE_URL}/study-groups/public${queryString ? `?${queryString}` : ""}`;
+
+    const headers: HeadersInit = {}
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+
+    const response = await fetch(url, {
       method: "GET",
+      headers,
     });
 
-    const data = await handleResponse<any[]>(response);
-    return transformStudyGroups(data);
+    const data = await handleResponse<any>(response);
+    return {
+      ...data,
+      groups: transformStudyGroups(data.groups),
+    };
   },
 
   async getStudyGroupDetails(groupId: string): Promise<StudyGroup> {
@@ -468,16 +570,29 @@ export const studyGroupsApi = {
     return handleResponse<{ message: string }>(response);
   },
 
-  async getMyStudyGroups(token: string): Promise<StudyGroup[]> {
-    const response = await fetch(`${BASE_URL}/study-groups/my/groups`, {
+  async getMyStudyGroups(
+    token: string,
+    params?: StudyGroupsQueryParams
+  ): Promise<StudyGroupsPaginatedResponse> {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append("page", params.page.toString());
+    if (params?.limit) queryParams.append("limit", params.limit.toString());
+
+    const queryString = queryParams.toString();
+    const url = `${BASE_URL}/study-groups/my/groups${queryString ? `?${queryString}` : ""}`;
+
+    const response = await fetch(url, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${token}`,
       },
     });
 
-    const data = await handleResponse<any[]>(response);
-    return transformStudyGroups(data);
+    const data = await handleResponse<any>(response);
+    return {
+      ...data,
+      groups: transformStudyGroups(data.groups),
+    };
   },
 
   async shareFile(
@@ -518,19 +633,31 @@ function buildNotesQuery(filters: NotesFilters = {}): string {
       }
     });
   }
+  if (filters.sort_by) {
+    params.append("sort_by", filters.sort_by);
+  }
+  if (filters.page) {
+    params.append("page", filters.page.toString());
+  }
+  if (filters.limit) {
+    params.append("limit", filters.limit.toString());
+  }
   const query = params.toString();
   return query ? `?${query}` : "";
 }
 
 export const notesApi = {
-  async searchNotes(filters: NotesFilters = {}): Promise<Note[]> {
+  async searchNotes(filters: NotesFilters = {}): Promise<NotesPaginatedResponse> {
     const query = buildNotesQuery(filters);
     const response = await fetch(`${BASE_URL}/notes/${query}`, {
       method: "GET",
     });
 
-    const data = await handleResponse<any[]>(response);
-    return transformNotes(data);
+    const data = await handleResponse<any>(response);
+    return {
+      ...data,
+      notes: transformNotes(data.notes),
+    };
   },
 
   async getLatestNotes(): Promise<Note[]> {

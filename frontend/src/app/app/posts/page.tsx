@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { MessageCircle, NotebookPen, RefreshCw, Sparkles } from "lucide-react"
+import { MessageCircle, NotebookPen, RefreshCw, Sparkles, ChevronLeft, ChevronRight } from "lucide-react"
 
-import { postsApi, Post } from "@/lib/api"
+import { postsApi, Post, PostsPaginatedResponse } from "@/lib/api"
 import { CreatePostDialog } from "@/components/create-post-dialog"
 import { PostsList } from "@/components/posts-list"
 import { Button } from "@/components/ui/button"
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Loader2 } from "lucide-react"
 
 interface FiltersState {
   search: string
@@ -28,30 +29,22 @@ const DEFAULT_FILTERS: FiltersState = {
   subject: "",
 }
 
+const POSTS_PER_PAGE = 2
+
 export default function PostsPage() {
   const router = useRouter()
   const [posts, setPosts] = useState<Post[]>([])
   const [myPosts, setMyPosts] = useState<Post[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filters, setFilters] = useState<FiltersState>(DEFAULT_FILTERS)
-
-  const filteredPosts = useMemo(() => {
-    const search = filters.search.trim().toLowerCase()
-    const subjectFilter = filters.subject.trim().toLowerCase()
-
-    return posts.filter((post) => {
-      const matchesSearch =
-        search.length === 0 ||
-        post.title.toLowerCase().includes(search) ||
-        post.description.toLowerCase().includes(search)
-
-      const matchesSubject =
-        subjectFilter.length === 0 ||
-        post.subject.toLowerCase().includes(subjectFilter)
-
-      return matchesSearch && matchesSubject
-    })
-  }, [posts, filters])
+  const [searchInput, setSearchInput] = useState("") // Input local para debounce
+  const [subjectInput, setSubjectInput] = useState("") // Input local para debounce
+  const [pagination, setPagination] = useState({
+    page: 1,
+    total: 0,
+    total_pages: 0,
+  })
+  const debounceTimer = useRef<NodeJS.Timeout | null>(null)
 
   const activeFiltersCount = useMemo(() => {
     let count = 0
@@ -60,6 +53,124 @@ export default function PostsPage() {
     return count
   }, [filters])
 
+  const loadPosts = useCallback(async (page: number = 1, search?: string, subject?: string) => {
+    setIsLoading(true)
+    try {
+      const response: PostsPaginatedResponse = await postsApi.getLatestPosts({
+        page,
+        limit: POSTS_PER_PAGE,
+        search: search?.trim() || undefined,
+        subject: subject?.trim() || undefined,
+      })
+      
+      setPosts(response.posts)
+      setPagination({
+        page: response.page,
+        total: response.total,
+        total_pages: response.total_pages,
+      })
+    } catch (error) {
+      console.error("Error loading posts:", error)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  // Debounce para la búsqueda
+  useEffect(() => {
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current)
+    }
+
+    debounceTimer.current = setTimeout(() => {
+      setFilters((prev) => ({ ...prev, search: searchInput }))
+    }, 500) // Espera 500ms después de que el usuario deje de escribir
+
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current)
+      }
+    }
+  }, [searchInput])
+
+  // Debounce para el filtro de materia
+  useEffect(() => {
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current)
+    }
+
+    debounceTimer.current = setTimeout(() => {
+      setFilters((prev) => ({ ...prev, subject: subjectInput }))
+    }, 500)
+
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current)
+      }
+    }
+  }, [subjectInput])
+
+  // Cargar posts cuando cambian los filtros o la página
+  useEffect(() => {
+    loadPosts(1, filters.search, filters.subject)
+  }, [filters.search, filters.subject, loadPosts])
+
+  // Resetear a página 1 cuando cambian los filtros
+  useEffect(() => {
+    if (pagination.page !== 1) {
+      loadPosts(1, filters.search, filters.subject)
+    }
+  }, [filters.search, filters.subject])
+
+  const loadMyPosts = async () => {
+    try {
+      const token = localStorage.getItem("auth_token")
+      if (!token) {
+        setMyPosts([])
+        return
+      }
+      const data = await postsApi.getMyPosts(token)
+      setMyPosts(data)
+    } catch (error) {
+      console.error("Error loading my posts:", error)
+    }
+  }
+
+  const refreshAll = async () => {
+    await Promise.all([loadPosts(pagination.page, filters.search, filters.subject), loadMyPosts()])
+  }
+
+  useEffect(() => {
+    loadPosts()
+    loadMyPosts()
+  }, [])
+
+  const handlePostCreated = () => {
+    refreshAll()
+    router.push("/app/posts")
+  }
+
+  const handleSubjectClick = (subject: string) => {
+    setSubjectInput(subject)
+    setFilters((prev) => ({
+      ...prev,
+      subject,
+    }))
+  }
+
+  const handleResetFilters = () => {
+    setFilters(DEFAULT_FILTERS)
+    setSearchInput("")
+    setSubjectInput("")
+  }
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= pagination.total_pages) {
+      loadPosts(newPage, filters.search, filters.subject)
+    }
+  }
+
+  // Calcular estadísticas basadas en todos los posts (necesitaríamos cargar todos para esto, pero por ahora usamos los cargados)
   const highlightPost = useMemo(() => {
     if (posts.length === 0) return null
     const [first] = posts
@@ -86,57 +197,6 @@ export default function PostsPage() {
       subjectKey
     return { subject: subjectLabel, count }
   }, [posts])
-
-  const loadPosts = async () => {
-    setIsLoading(true)
-    try {
-      const data = await postsApi.getLatestPosts(30)
-      setPosts(data)
-    } catch (error) {
-      console.error("Error loading posts:", error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const loadMyPosts = async () => {
-    try {
-      const token = localStorage.getItem("auth_token")
-      if (!token) {
-        setMyPosts([])
-        return
-      }
-      const data = await postsApi.getMyPosts(token)
-      setMyPosts(data)
-    } catch (error) {
-      console.error("Error loading my posts:", error)
-    }
-  }
-
-  const refreshAll = async () => {
-    await Promise.all([loadPosts(), loadMyPosts()])
-  }
-
-  useEffect(() => {
-    loadPosts()
-    loadMyPosts()
-  }, [])
-
-  const handlePostCreated = () => {
-    refreshAll()
-    router.push("/app/posts")
-  }
-
-  const handleSubjectClick = (subject: string) => {
-    setFilters((prev) => ({
-      ...prev,
-      subject,
-    }))
-  }
-
-  const handleResetFilters = () => {
-    setFilters(DEFAULT_FILTERS)
-  }
 
   return (
     <main className="container mx-auto space-y-10 py-12">
@@ -181,12 +241,12 @@ export default function PostsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-4xl font-semibold text-primary">
-                {filteredPosts.length}
+                {pagination.total}
               </div>
               <p className="text-xs text-muted-foreground">
                 {activeFiltersCount > 0
-                  ? `Filtrando entre ${posts.length} publicaciones`
-                  : "Mostrando las últimas conversaciones"}
+                  ? `Filtrando entre ${pagination.total} publicaciones`
+                  : "Total de publicaciones disponibles"}
               </p>
             </CardContent>
           </Card>
@@ -253,10 +313,8 @@ export default function PostsPage() {
               </label>
               <Input
                 placeholder="conceptos, dudas, títulos..."
-                value={filters.search}
-                onChange={(event) =>
-                  setFilters((prev) => ({ ...prev, search: event.target.value }))
-                }
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
               />
             </div>
             <div className="space-y-2">
@@ -265,10 +323,8 @@ export default function PostsPage() {
               </label>
               <Input
                 placeholder="Programación, Álgebra, Física..."
-                value={filters.subject}
-                onChange={(event) =>
-                  setFilters((prev) => ({ ...prev, subject: event.target.value }))
-                }
+                value={subjectInput}
+                onChange={(event) => setSubjectInput(event.target.value)}
               />
             </div>
           </div>
@@ -298,23 +354,57 @@ export default function PostsPage() {
               >
                 Limpiar filtros
               </Button>
-              <Button
-                size="sm"
-                onClick={loadPosts}
-                disabled={isLoading}
-              >
-                Aplicar filtros
-              </Button>
             </div>
           </div>
         </CardHeader>
 
         <CardContent className="pt-6">
-          <PostsList
-            posts={filteredPosts}
-            isLoading={isLoading}
-            onSubjectClick={handleSubjectClick}
-          />
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : (
+            <>
+              <div className="mb-4 text-sm text-muted-foreground">
+                Mostrando {posts.length} de {pagination.total} publicaciones
+                {pagination.total_pages > 1 && (
+                  <span> (Página {pagination.page} de {pagination.total_pages})</span>
+                )}
+              </div>
+              <PostsList
+                posts={posts}
+                isLoading={isLoading}
+                onSubjectClick={handleSubjectClick}
+              />
+              
+              {/* Paginación */}
+              {pagination.total_pages > 1 && (
+                <div className="flex items-center justify-center gap-2 pt-6 mt-6 border-t">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handlePageChange(pagination.page - 1)}
+                    disabled={pagination.page === 1 || isLoading}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Anterior
+                  </Button>
+                  <span className="text-sm text-muted-foreground px-4">
+                    Página {pagination.page} de {pagination.total_pages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handlePageChange(pagination.page + 1)}
+                    disabled={pagination.page === pagination.total_pages || isLoading}
+                  >
+                    Siguiente
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
     </main>

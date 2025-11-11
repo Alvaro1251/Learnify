@@ -167,8 +167,14 @@ export function AppHeader() {
         if (!token) return
         const user = await authApi.getCurrentUser(token)
         setCurrentUser(user)
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error loading current user:", error)
+        // Si el error es 401, el token es inválido - limpiarlo pero no redirigir
+        // porque el usuario puede estar navegando sin estar autenticado
+        if (error?.status === 401) {
+          localStorage.removeItem("auth_token")
+          setCurrentUser(null)
+        }
       }
     }
     fetchUser()

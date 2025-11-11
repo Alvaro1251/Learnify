@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
-import { adminApi, authApi, UserProfile, ApiError } from "@/lib/api"
+import { useEffect, useState, useCallback, useRef, useMemo } from "react"
+import { adminApi, UserProfile, ApiError, UsersPaginatedResponse } from "@/lib/api"
 import {
   Dialog,
   DialogContent,
@@ -20,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Loader2, X } from "lucide-react"
+import { Loader2, X, ChevronLeft, ChevronRight } from "lucide-react"
 import { toast } from "sonner"
 
 interface AdminPanelProps {
@@ -38,34 +38,20 @@ const DEFAULT_FILTERS: FiltersState = {
   role: "",
 }
 
+const USERS_PER_PAGE = 2
+
 export function AdminPanel({ open, onOpenChange }: AdminPanelProps) {
   const [users, setUsers] = useState<UserProfile[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
   const [filters, setFilters] = useState<FiltersState>(DEFAULT_FILTERS)
-
-  const filteredUsers = useMemo(() => {
-    const search = filters.search.trim().toLowerCase()
-    const roleFilter = filters.role.trim().toLowerCase()
-
-    return users.filter((user) => {
-      const fullName = user.full_name && user.last_name
-        ? `${user.full_name} ${user.last_name}`.toLowerCase()
-        : ""
-      const email = user.email?.toLowerCase() || ""
-      
-      const matchesSearch =
-        search.length === 0 ||
-        fullName.includes(search) ||
-        email.includes(search)
-
-      const matchesRole =
-        roleFilter.length === 0 ||
-        (user.role || "user").toLowerCase() === roleFilter
-
-      return matchesSearch && matchesRole
-    })
-  }, [users, filters])
+  const [searchInput, setSearchInput] = useState("") // Input local para debounce
+  const [pagination, setPagination] = useState({
+    page: 1,
+    total: 0,
+    total_pages: 0,
+  })
+  const debounceTimer = useRef<NodeJS.Timeout | null>(null)
 
   const activeFiltersCount = useMemo(() => {
     let count = 0
@@ -74,7 +60,7 @@ export function AdminPanel({ open, onOpenChange }: AdminPanelProps) {
     return count
   }, [filters])
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async (page: number = 1, search?: string, role?: string) => {
     setIsLoading(true)
     try {
       const token = localStorage.getItem("auth_token")
@@ -82,8 +68,20 @@ export function AdminPanel({ open, onOpenChange }: AdminPanelProps) {
         toast.error("No estás autenticado")
         return
       }
-      const usersList = await adminApi.getAllUsers(token)
-      setUsers(usersList)
+      
+      const response: UsersPaginatedResponse = await adminApi.getAllUsers(token, {
+        page,
+        limit: USERS_PER_PAGE,
+        search: search?.trim() || undefined,
+        role: role?.trim() || undefined,
+      })
+      
+      setUsers(response.users)
+      setPagination({
+        page: response.page,
+        total: response.total,
+        total_pages: response.total_pages,
+      })
     } catch (error) {
       console.error("Error loading users:", error)
       if (error instanceof ApiError) {
@@ -94,13 +92,38 @@ export function AdminPanel({ open, onOpenChange }: AdminPanelProps) {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
 
+  // Debounce para la búsqueda
+  useEffect(() => {
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current)
+    }
+
+    debounceTimer.current = setTimeout(() => {
+      setFilters((prev) => ({ ...prev, search: searchInput }))
+    }, 500) // Espera 500ms después de que el usuario deje de escribir
+
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current)
+      }
+    }
+  }, [searchInput])
+
+  // Cargar usuarios cuando cambian los filtros o la página
   useEffect(() => {
     if (open) {
-      loadUsers()
+      loadUsers(1, filters.search, filters.role)
     }
-  }, [open])
+  }, [open, filters.search, filters.role, loadUsers])
+
+  // Resetear a página 1 cuando cambian los filtros
+  useEffect(() => {
+    if (open && pagination.page !== 1) {
+      loadUsers(1, filters.search, filters.role)
+    }
+  }, [filters.search, filters.role])
 
   const handleRoleChange = async (userId: string, newRole: "user" | "moderator" | "admin") => {
     setUpdatingUserId(userId)
@@ -112,8 +135,8 @@ export function AdminPanel({ open, onOpenChange }: AdminPanelProps) {
       }
       await adminApi.updateUserRole(token, userId, newRole)
       toast.success("Rol actualizado correctamente")
-      // Recargar la lista de usuarios
-      await loadUsers()
+      // Recargar la lista de usuarios en la página actual
+      await loadUsers(pagination.page, filters.search, filters.role)
     } catch (error) {
       console.error("Error updating role:", error)
       if (error instanceof ApiError) {
@@ -150,6 +173,13 @@ export function AdminPanel({ open, onOpenChange }: AdminPanelProps) {
 
   const handleResetFilters = () => {
     setFilters(DEFAULT_FILTERS)
+    setSearchInput("")
+  }
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= pagination.total_pages) {
+      loadUsers(newPage, filters.search, filters.role)
+    }
   }
 
   return (
@@ -171,10 +201,8 @@ export function AdminPanel({ open, onOpenChange }: AdminPanelProps) {
               </label>
               <Input
                 placeholder="Nombre, apellido, email..."
-                value={filters.search}
-                onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, search: e.target.value }))
-                }
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
               />
             </div>
             <div className="space-y-2">
@@ -233,63 +261,89 @@ export function AdminPanel({ open, onOpenChange }: AdminPanelProps) {
           </div>
         ) : (
           <div className="mt-4 space-y-3">
-            {filteredUsers.length === 0 ? (
+            {users.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                {users.length === 0
-                  ? "No hay usuarios"
-                  : activeFiltersCount > 0
-                    ? "No se encontraron usuarios con los filtros aplicados"
-                    : "No hay usuarios"}
+                {activeFiltersCount > 0
+                  ? "No se encontraron usuarios con los filtros aplicados"
+                  : "No hay usuarios"}
               </div>
             ) : (
               <>
-                {activeFiltersCount > 0 && (
-                  <div className="text-sm text-muted-foreground">
-                    Mostrando {filteredUsers.length} de {users.length} usuarios
+                <div className="text-sm text-muted-foreground">
+                  Mostrando {users.length} de {pagination.total} usuarios
+                  {pagination.total_pages > 1 && (
+                    <span> (Página {pagination.page} de {pagination.total_pages})</span>
+                  )}
+                </div>
+                {users.map((user) => (
+                  <Card key={user.id || user._id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium">
+                            {user.full_name && user.last_name
+                              ? `${user.full_name} ${user.last_name}`
+                              : user.email}
+                          </div>
+                          <div className="text-sm text-muted-foreground truncate">
+                            {user.email}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Badge variant={getRoleBadgeVariant(user.role)}>
+                            {getRoleLabel(user.role)}
+                          </Badge>
+                          <Select
+                            value={user.role || "user"}
+                            onValueChange={(value) =>
+                              handleRoleChange(user.id || user._id || "", value as "user" | "moderator" | "admin")
+                            }
+                            disabled={updatingUserId === (user.id || user._id)}
+                          >
+                            <SelectTrigger className="w-32">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="user">Usuario</SelectItem>
+                              <SelectItem value="moderator">Moderador</SelectItem>
+                              <SelectItem value="admin">Admin</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {updatingUserId === (user.id || user._id) && (
+                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+                
+                {/* Paginación */}
+                {pagination.total_pages > 1 && (
+                  <div className="flex items-center justify-center gap-2 pt-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(pagination.page - 1)}
+                      disabled={pagination.page === 1 || isLoading}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Anterior
+                    </Button>
+                    <span className="text-sm text-muted-foreground px-4">
+                      Página {pagination.page} de {pagination.total_pages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(pagination.page + 1)}
+                      disabled={pagination.page === pagination.total_pages || isLoading}
+                    >
+                      Siguiente
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
                   </div>
                 )}
-                {filteredUsers.map((user) => (
-                <Card key={user.id || user._id}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium">
-                          {user.full_name && user.last_name
-                            ? `${user.full_name} ${user.last_name}`
-                            : user.email}
-                        </div>
-                        <div className="text-sm text-muted-foreground truncate">
-                          {user.email}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Badge variant={getRoleBadgeVariant(user.role)}>
-                          {getRoleLabel(user.role)}
-                        </Badge>
-                        <Select
-                          value={user.role || "user"}
-                          onValueChange={(value) =>
-                            handleRoleChange(user.id || user._id || "", value as "user" | "moderator" | "admin")
-                          }
-                          disabled={updatingUserId === (user.id || user._id)}
-                        >
-                          <SelectTrigger className="w-32">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="user">Usuario</SelectItem>
-                            <SelectItem value="moderator">Moderador</SelectItem>
-                            <SelectItem value="admin">Admin</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        {updatingUserId === (user.id || user._id) && (
-                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-                ))}
               </>
             )}
           </div>
@@ -298,4 +352,3 @@ export function AdminPanel({ open, onOpenChange }: AdminPanelProps) {
     </Dialog>
   )
 }
-

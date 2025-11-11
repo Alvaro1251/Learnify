@@ -16,6 +16,7 @@ from config.database import get_database
 from controllers.auth import get_current_user
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from typing import List, Optional
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 security = HTTPBearer(auto_error=False)
@@ -37,37 +38,37 @@ async def create_new_note(
         )
 
 
-@router.get("/{note_id}", response_model=NoteResponse)
-async def get_note(
-    note_id: str,
-    credentials: Optional[HTTPAuthorizationCredentials] = Security(security),
-    db: AsyncIOMotorDatabase = Depends(get_database),
-):
-    current_user = None
-    if credentials:
-        try:
-            current_user = await get_current_user(credentials, db)
-        except:
-            pass  # If auth fails, continue without user
-    
-    user_id = str(current_user.id) if current_user else None
-    note = await get_note_by_id(db, note_id, user_id)
-    if not note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Note not found"
-        )
-    return NoteResponse(**note)
+class NotesPaginatedResponse(BaseModel):
+    notes: List[NoteResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
 
 
-@router.get("/", response_model=List[NoteResponse])
+@router.get("/", response_model=NotesPaginatedResponse)
 async def search(
     university: Optional[str] = Query(None),
     career: Optional[str] = Query(None),
     subject: Optional[str] = Query(None),
     tags: Optional[List[str]] = Query(None),
+    sort_by: str = Query("recent", regex="^(recent|liked|oldest)$"),
+    page: int = Query(1, ge=1, description="Número de página (empezando en 1)"),
+    limit: int = Query(2, ge=1, le=100, description="Cantidad de notas por página (máximo 100)"),
     credentials: Optional[HTTPAuthorizationCredentials] = Security(security),
     db: AsyncIOMotorDatabase = Depends(get_database),
 ):
+    """
+    Busca notas con paginación y filtros.
+    
+    - **page**: Número de página (empezando en 1)
+    - **limit**: Cantidad de notas por página (máximo 100)
+    - **university**: Filtrar por universidad
+    - **career**: Filtrar por carrera
+    - **subject**: Filtrar por materia
+    - **tags**: Filtrar por tags (array)
+    - **sort_by**: Ordenar por (recent, liked, oldest)
+    """
     current_user = None
     if credentials:
         try:
@@ -76,10 +77,29 @@ async def search(
             pass
     
     user_id = str(current_user.id) if current_user else None
-    notes = await search_notes(
-        db, university=university, career=career, subject=subject, tags=tags, current_user_id=user_id
+    skip = (page - 1) * limit
+    result = await search_notes(
+        db, 
+        university=university, 
+        career=career, 
+        subject=subject, 
+        tags=tags, 
+        current_user_id=user_id,
+        sort_by=sort_by,
+        skip=skip,
+        limit=limit,
     )
-    return [NoteResponse(**note) for note in notes]
+    
+    # Convertir notas a NoteResponse
+    notes_response = [NoteResponse(**note) for note in result["notes"]]
+    
+    return NotesPaginatedResponse(
+        notes=notes_response,
+        total=result["total"],
+        page=result["page"],
+        limit=result["limit"],
+        total_pages=result["total_pages"],
+    )
 
 
 @router.get("/latest/notes", response_model=List[NoteResponse])
@@ -135,6 +155,28 @@ async def my_notes(
 ):
     notes = await get_user_notes(db, str(current_user.id), str(current_user.id))
     return [NoteResponse(**note) for note in notes]
+
+
+@router.get("/{note_id}", response_model=NoteResponse)
+async def get_note(
+    note_id: str,
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(security),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    current_user = None
+    if credentials:
+        try:
+            current_user = await get_current_user(credentials, db)
+        except:
+            pass  # If auth fails, continue without user
+    
+    user_id = str(current_user.id) if current_user else None
+    note = await get_note_by_id(db, note_id, user_id)
+    if not note:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Note not found"
+        )
+    return NoteResponse(**note)
 
 
 @router.post("/{note_id}/like", response_model=NoteResponse)

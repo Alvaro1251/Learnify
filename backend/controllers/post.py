@@ -18,7 +18,8 @@ from services.post_service import (
 from config.database import get_database
 from controllers.auth import get_current_user
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from typing import List
+from typing import List, Optional
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -39,13 +40,43 @@ async def create_new_post(
         )
 
 
-@router.get("/latest", response_model=List[PostResponse])
+class PostsPaginatedResponse(BaseModel):
+    posts: List[PostResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+
+
+@router.get("/latest", response_model=PostsPaginatedResponse)
 async def latest_posts(
-    limit: int = Query(10, ge=1, le=100),
+    page: int = Query(1, ge=1, description="Número de página (empezando en 1)"),
+    limit: int = Query(2, ge=1, le=100, description="Cantidad de posts por página (máximo 100)"),
+    search: Optional[str] = Query(None, description="Buscar por título o descripción"),
+    subject: Optional[str] = Query(None, description="Filtrar por materia"),
     db: AsyncIOMotorDatabase = Depends(get_database),
 ):
-    posts = await get_latest_posts(db, limit=limit)
-    return posts
+    """
+    Lista posts con paginación y filtros.
+    
+    - **page**: Número de página (empezando en 1)
+    - **limit**: Cantidad de posts por página (máximo 100)
+    - **search**: Buscar por título o descripción
+    - **subject**: Filtrar por materia específica
+    """
+    skip = (page - 1) * limit
+    result = await get_latest_posts(db, skip=skip, limit=limit, search=search, subject=subject)
+    
+    # Convertir posts a PostResponse
+    posts_response = [PostResponse(**post) for post in result["posts"]]
+    
+    return PostsPaginatedResponse(
+        posts=posts_response,
+        total=result["total"],
+        page=result["page"],
+        limit=result["limit"],
+        total_pages=result["total_pages"],
+    )
 
 
 @router.get("/{post_id}", response_model=PostDetailResponse)

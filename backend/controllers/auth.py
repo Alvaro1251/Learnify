@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import timedelta
 from models.user import UserRegister, UserLogin, UserResponse, Token, RoleUpdate
@@ -14,7 +14,8 @@ from services.auth_service import (
 from config.database import get_database
 from config.security import create_access_token, decode_access_token
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from typing import List
+from typing import List, Optional
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 security = HTTPBearer()
@@ -100,14 +101,44 @@ async def get_me(current_user=Depends(get_current_user)):
     return current_user
 
 
-@router.get("/users", response_model=List[UserResponse])
+class UsersResponse(BaseModel):
+    users: List[UserResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+
+
+@router.get("/users", response_model=UsersResponse)
 async def list_users(
     current_admin=Depends(get_admin),
     db: AsyncIOMotorDatabase = Depends(get_database),
+    page: int = Query(1, ge=1, description="Número de página (empezando en 1)"),
+    limit: int = Query(2, ge=1, le=100, description="Cantidad de usuarios por página (máximo 100)"),
+    search: Optional[str] = Query(None, description="Buscar por nombre, apellido o email"),
+    role: Optional[str] = Query(None, description="Filtrar por rol (user, moderator, admin)"),
 ):
-    """Lista todos los usuarios. Solo admins pueden hacerlo."""
-    users = await get_all_users(db)
-    return [UserResponse(**user) for user in users]
+    """
+    Lista usuarios con paginación y filtros. Solo admins pueden hacerlo.
+    
+    - **page**: Número de página (empezando en 1)
+    - **limit**: Cantidad de usuarios por página (máximo 100)
+    - **search**: Buscar por nombre, apellido o email
+    - **role**: Filtrar por rol específico
+    """
+    skip = (page - 1) * limit
+    result = await get_all_users(db, skip=skip, limit=limit, search=search, role=role)
+    
+    # Convertir usuarios a UserResponse
+    users_response = [UserResponse(**user) for user in result["users"]]
+    
+    return UsersResponse(
+        users=users_response,
+        total=result["total"],
+        page=result["page"],
+        limit=result["limit"],
+        total_pages=result["total_pages"],
+    )
 
 
 @router.put("/users/{user_id}/role", response_model=UserResponse)

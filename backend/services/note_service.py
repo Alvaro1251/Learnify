@@ -105,6 +105,12 @@ async def create_note(
 ) -> NoteInDB:
     notes_collection = db["notes"]
 
+    # Convert owner_id to ObjectId for consistency
+    try:
+        owner_object_id = ObjectId(owner_id)
+    except (InvalidId, TypeError):
+        raise ValueError(f"Invalid owner_id: {owner_id}")
+
     note_data = {
         "title": note.title,
         "description": note.description,
@@ -114,7 +120,7 @@ async def create_note(
         "tags": note.tags,
         "file_url": note.file_url,
         "file_name": note.file_name,
-        "owner": owner_id,
+        "owner": owner_object_id,  # Store as ObjectId for consistency
         "likes": [],  # Initialize empty likes array
         "created_at": datetime.utcnow(),
         "updated_at": datetime.utcnow(),
@@ -189,7 +195,17 @@ async def search_notes(
     subject: Optional[str] = None,
     tags: Optional[List[str]] = None,
     current_user_id: Optional[str] = None,
-) -> List[dict]:
+    sort_by: str = "recent",  # "recent", "liked", "oldest"
+    skip: int = 0,
+    limit: int = 2,
+) -> dict:
+    """
+    Busca notas con paginación y filtros
+    
+    Returns:
+        dict con 'notes' (lista de notas), 'total' (total de notas que cumplen los filtros),
+        'page' (página actual), 'limit' (límite por página), 'total_pages' (total de páginas)
+    """
     notes_collection = db["notes"]
     query = {}
 
@@ -202,14 +218,50 @@ async def search_notes(
     if tags:
         query["tags"] = {"$in": tags}
 
-    notes = await notes_collection.find(query).to_list(length=None)
+    # Contar total antes de aplicar skip/limit
+    if query:
+        total = await notes_collection.count_documents(query)
+    else:
+        total = await notes_collection.count_documents({})
+
+    # Apply sorting based on sort_by parameter
+    if sort_by == "liked":
+        # Use aggregation to sort by likes count
+        pipeline = [
+            {"$match": query},
+            {
+                "$addFields": {
+                    "likes": {"$ifNull": ["$likes", []]},
+                    "likes_count": {"$size": {"$ifNull": ["$likes", []]}}
+                }
+            },
+            {"$sort": {"likes_count": -1, "created_at": -1}},
+            {"$skip": skip},
+            {"$limit": limit},
+        ]
+        notes = await notes_collection.aggregate(pipeline).to_list(length=limit)
+    elif sort_by == "oldest":
+        notes = await notes_collection.find(query).sort("created_at", 1).skip(skip).limit(limit).to_list(length=limit)
+    else:  # "recent" (default)
+        notes = await notes_collection.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(length=limit)
+    
     await _enrich_notes_with_owner_names(db, notes)
     
     # Enrich each note with likes info
     for note in notes:
         _enrich_note_with_likes(note, current_user_id)
     
-    return notes
+    # Calcular total de páginas
+    total_pages = (total + limit - 1) // limit if limit > 0 else 0
+    current_page = (skip // limit) + 1 if limit > 0 else 1
+    
+    return {
+        "notes": notes,
+        "total": total,
+        "page": current_page,
+        "limit": limit,
+        "total_pages": total_pages,
+    }
 
 
 async def get_latest_notes(
@@ -293,13 +345,19 @@ async def get_user_notes(
 ) -> List[dict]:
     notes_collection = db["notes"]
 
-    # Find notes by owner ObjectId
+    # Find notes by owner - support both ObjectId and string for backward compatibility
     try:
         owner_object_id = ObjectId(user_id)
-        notes = await notes_collection.find({"owner": owner_object_id}).to_list(length=None)
+        # Search for both ObjectId and string format (for backward compatibility)
+        notes = await notes_collection.find({
+            "$or": [
+                {"owner": owner_object_id},
+                {"owner": user_id}
+            ]
+        }).to_list(length=None)
     except (InvalidId, TypeError):
-        # If user_id is not a valid ObjectId, return empty list
-        return []
+        # If user_id is not a valid ObjectId, search as string only
+        notes = await notes_collection.find({"owner": user_id}).to_list(length=None)
     
     await _enrich_notes_with_owner_names(db, notes)
     

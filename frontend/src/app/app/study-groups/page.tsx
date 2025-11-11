@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { RefreshCw, Users, CalendarClock, Globe } from "lucide-react"
+import { useEffect, useMemo, useState, useCallback } from "react"
+import { RefreshCw, Users, CalendarClock, Globe, ChevronLeft, ChevronRight } from "lucide-react"
 
-import { studyGroupsApi, StudyGroup } from "@/lib/api"
+import { studyGroupsApi, StudyGroup, StudyGroupsPaginatedResponse } from "@/lib/api"
 import { CreateStudyGroupDialog } from "@/components/create-study-group-dialog"
 import { StudyGroupsList } from "@/components/study-groups-list"
 import { Button } from "@/components/ui/button"
@@ -17,45 +17,97 @@ import {
 } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
+const GROUPS_PER_PAGE = 2
+
 export default function StudyGroupsPage() {
   const [myGroups, setMyGroups] = useState<StudyGroup[]>([])
   const [publicGroups, setPublicGroups] = useState<StudyGroup[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [publicPagination, setPublicPagination] = useState({
+    page: 1,
+    total: 0,
+    total_pages: 0,
+  })
+  const [myGroupsPagination, setMyGroupsPagination] = useState({
+    page: 1,
+    total: 0,
+    total_pages: 0,
+  })
+  const [activeTab, setActiveTab] = useState<"my-groups" | "discover">("my-groups")
 
-  const loadGroups = async () => {
-    setIsLoading(true)
+  const loadPublicGroups = useCallback(async (page: number = 1) => {
     try {
       const token = localStorage.getItem("auth_token")
 
-      const publicData = await studyGroupsApi.getPublicStudyGroups()
-      let myGroupsData: StudyGroup[] = []
+      const publicResponse: StudyGroupsPaginatedResponse = await studyGroupsApi.getPublicStudyGroups({
+        page,
+        limit: GROUPS_PER_PAGE,
+      }, token || undefined)
 
-      if (token) {
-        myGroupsData = await studyGroupsApi.getMyStudyGroups(token)
+      setPublicGroups(publicResponse.groups)
+      setPublicPagination({
+        page: publicResponse.page,
+        total: publicResponse.total,
+        total_pages: publicResponse.total_pages,
+      })
+    } catch (error) {
+      console.error("Error loading public groups:", error)
+    }
+  }, [])
+
+  const loadMyGroups = useCallback(async (page: number = 1) => {
+    try {
+      const token = localStorage.getItem("auth_token")
+      if (!token) {
+        setMyGroups([])
+        setMyGroupsPagination({ page: 1, total: 0, total_pages: 0 })
+        return
       }
 
-      setPublicGroups(publicData)
-      setMyGroups(myGroupsData)
+      const myGroupsResponse: StudyGroupsPaginatedResponse = await studyGroupsApi.getMyStudyGroups(token, {
+        page,
+        limit: GROUPS_PER_PAGE,
+      })
+
+      setMyGroups(myGroupsResponse.groups)
+      setMyGroupsPagination({
+        page: myGroupsResponse.page,
+        total: myGroupsResponse.total,
+        total_pages: myGroupsResponse.total_pages,
+      })
     } catch (error) {
-      console.error("Error loading study groups:", error)
+      console.error("Error loading my groups:", error)
+    }
+  }, [])
+
+  const loadGroups = useCallback(async () => {
+    setIsLoading(true)
+    try {
+      await Promise.all([loadPublicGroups(1), loadMyGroups(1)])
+    } catch (error) {
+      console.error("Error loading groups:", error)
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [loadPublicGroups, loadMyGroups])
 
   useEffect(() => {
     loadGroups()
-  }, [])
+  }, [loadGroups])
 
-  const { discoverGroups, privateGroupCount, upcomingExamCount, nextExamLabel } = useMemo(() => {
-    const discover = publicGroups.filter(
-      (publicGroup) =>
-        !myGroups.some(
-          (myGroup) =>
-            (myGroup.id || myGroup._id) === (publicGroup.id || publicGroup._id)
-        )
-    )
+  const handlePublicPageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= publicPagination.total_pages) {
+      loadPublicGroups(newPage)
+    }
+  }
 
+  const handleMyGroupsPageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= myGroupsPagination.total_pages) {
+      loadMyGroups(newPage)
+    }
+  }
+
+  const { privateGroupCount, upcomingExamCount, nextExamLabel } = useMemo(() => {
     const privateCount = myGroups.filter((group) => !group.is_public).length
 
     const now = new Date().getTime()
@@ -72,7 +124,6 @@ export default function StudyGroupsPage() {
     const nextExam = upcomingExamEntries[0]
 
     return {
-      discoverGroups: discover,
       privateGroupCount: privateCount,
       upcomingExamCount: upcomingExamEntries.length,
       nextExamLabel: nextExam
@@ -84,7 +135,7 @@ export default function StudyGroupsPage() {
           }).format(nextExam.date)
         : null,
     }
-  }, [myGroups, publicGroups])
+  }, [myGroups])
 
   return (
     <main className="container mx-auto space-y-10 py-12">
@@ -150,12 +201,12 @@ export default function StudyGroupsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-4xl font-semibold">
-                {discoverGroups.length}
+                {publicPagination.total}
               </div>
               <p className="text-xs text-muted-foreground">
-                {discoverGroups.length === 0
+                {publicPagination.total === 0
                   ? "Ningún grupo por ahora"
-                  : "Explorá la pestaña descubrir para sumarte"}
+                  : "Grupos públicos disponibles para descubrir"}
               </p>
             </CardContent>
           </Card>
@@ -182,7 +233,7 @@ export default function StudyGroupsPage() {
         </div>
       </section>
 
-      <Tabs defaultValue="my-groups" className="w-full">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "my-groups" | "discover")} className="w-full">
         <Card className="border border-border/70">
           <CardHeader className="gap-4 border-b pb-6">
             <div className="space-y-2">
@@ -201,7 +252,7 @@ export default function StudyGroupsPage() {
                 >
                   Mis grupos
                   <span className="inline-flex h-6 min-w-[1.75rem] items-center justify-center rounded-full bg-primary/10 px-2 text-xs font-semibold text-primary">
-                    {myGroups.length}
+                    {myGroupsPagination.total}
                   </span>
                 </TabsTrigger>
                 <TabsTrigger
@@ -210,7 +261,7 @@ export default function StudyGroupsPage() {
                 >
                   Descubrir
                   <span className="inline-flex h-6 min-w-[1.75rem] items-center justify-center rounded-full bg-primary/10 px-2 text-xs font-semibold text-primary">
-                    {discoverGroups.length}
+                    {publicPagination.total}
                   </span>
                 </TabsTrigger>
               </TabsList>
@@ -218,19 +269,101 @@ export default function StudyGroupsPage() {
           </CardHeader>
           <CardContent className="pt-6">
             <TabsContent value="my-groups" className="mt-0">
-              <StudyGroupsList
-                groups={myGroups}
-                isLoading={isLoading}
-                isMember={true}
-              />
-            </TabsContent>
-            <TabsContent value="discover" className="mt-0">
-              <StudyGroupsList
-                groups={discoverGroups}
-                isLoading={isLoading}
-                isMember={false}
-              />
-            </TabsContent>
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <RefreshCw className="h-6 w-6 animate-spin" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="mb-4 text-sm text-muted-foreground">
+                      Mostrando {myGroups.length} de {myGroupsPagination.total} grupos
+                      {myGroupsPagination.total_pages > 1 && (
+                        <span> (Página {myGroupsPagination.page} de {myGroupsPagination.total_pages})</span>
+                      )}
+                    </div>
+                    <StudyGroupsList
+                      groups={myGroups}
+                      isLoading={isLoading}
+                      isMember={true}
+                    />
+                    
+                    {/* Paginación Mis grupos */}
+                    {myGroupsPagination.total_pages > 1 && (
+                      <div className="flex items-center justify-center gap-2 pt-6 mt-6 border-t">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleMyGroupsPageChange(myGroupsPagination.page - 1)}
+                          disabled={myGroupsPagination.page === 1 || isLoading}
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                          Anterior
+                        </Button>
+                        <span className="text-sm text-muted-foreground px-4">
+                          Página {myGroupsPagination.page} de {myGroupsPagination.total_pages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleMyGroupsPageChange(myGroupsPagination.page + 1)}
+                          disabled={myGroupsPagination.page === myGroupsPagination.total_pages || isLoading}
+                        >
+                          Siguiente
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </TabsContent>
+              <TabsContent value="discover" className="mt-0">
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <RefreshCw className="h-6 w-6 animate-spin" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="mb-4 text-sm text-muted-foreground">
+                      Mostrando {publicGroups.length} de {publicPagination.total} grupos públicos
+                      {publicPagination.total_pages > 1 && (
+                        <span> (Página {publicPagination.page} de {publicPagination.total_pages})</span>
+                      )}
+                    </div>
+                    <StudyGroupsList
+                      groups={publicGroups}
+                      isLoading={isLoading}
+                      isMember={false}
+                    />
+                    
+                    {/* Paginación Descubrir */}
+                    {publicPagination.total_pages > 1 && (
+                      <div className="flex items-center justify-center gap-2 pt-6 mt-6 border-t">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handlePublicPageChange(publicPagination.page - 1)}
+                          disabled={publicPagination.page === 1 || isLoading}
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                          Anterior
+                        </Button>
+                        <span className="text-sm text-muted-foreground px-4">
+                          Página {publicPagination.page} de {publicPagination.total_pages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handlePublicPageChange(publicPagination.page + 1)}
+                          disabled={publicPagination.page === publicPagination.total_pages || isLoading}
+                        >
+                          Siguiente
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </TabsContent>
           </CardContent>
         </Card>
       </Tabs>

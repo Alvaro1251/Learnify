@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from models.study_group import (
     StudyGroupCreate,
     StudyGroupResponse,
@@ -23,9 +24,11 @@ from config.database import get_database
 from config.websocket_manager import manager
 from controllers.auth import get_current_user
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from typing import List
+from typing import List, Optional
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/study-groups", tags=["study-groups"])
+security = HTTPBearer(auto_error=False)
 
 
 @router.post("/create", response_model=StudyGroupDetailResponse)
@@ -44,19 +47,77 @@ async def create_study_group_endpoint(
         )
 
 
-@router.get("/public", response_model=List[StudyGroupResponse])
-async def get_public_groups(db: AsyncIOMotorDatabase = Depends(get_database)):
-    groups = await get_public_study_groups(db)
-    return groups
+class StudyGroupsPaginatedResponse(BaseModel):
+    groups: List[StudyGroupResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
 
 
-@router.get("/my/groups", response_model=List[StudyGroupResponse])
+@router.get("/public", response_model=StudyGroupsPaginatedResponse)
+async def get_public_groups(
+    page: int = Query(1, ge=1, description="Número de página (empezando en 1)"),
+    limit: int = Query(2, ge=1, le=100, description="Cantidad de grupos por página (máximo 100)"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(security),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    """
+    Lista grupos públicos con paginación, excluyendo los grupos donde el usuario ya es miembro.
+    
+    - **page**: Número de página (empezando en 1)
+    - **limit**: Cantidad de grupos por página (máximo 100)
+    """
+    # Obtener user_id si está autenticado para excluir sus grupos
+    exclude_user_id = None
+    if credentials:
+        try:
+            current_user = await get_current_user(credentials, db)
+            exclude_user_id = str(current_user.id)
+        except:
+            pass  # Si no está autenticado, no excluir nada
+    
+    skip = (page - 1) * limit
+    result = await get_public_study_groups(db, skip=skip, limit=limit, exclude_user_id=exclude_user_id)
+    
+    # Convertir grupos a StudyGroupResponse
+    groups_response = [StudyGroupResponse(**group) for group in result["groups"]]
+    
+    return StudyGroupsPaginatedResponse(
+        groups=groups_response,
+        total=result["total"],
+        page=result["page"],
+        limit=result["limit"],
+        total_pages=result["total_pages"],
+    )
+
+
+@router.get("/my/groups", response_model=StudyGroupsPaginatedResponse)
 async def get_my_groups(
+    page: int = Query(1, ge=1, description="Número de página (empezando en 1)"),
+    limit: int = Query(2, ge=1, le=100, description="Cantidad de grupos por página (máximo 100)"),
     current_user=Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_database),
 ):
-    groups = await get_user_study_groups(db, str(current_user.id))
-    return groups
+    """
+    Lista grupos del usuario con paginación.
+    
+    - **page**: Número de página (empezando en 1)
+    - **limit**: Cantidad de grupos por página (máximo 100)
+    """
+    skip = (page - 1) * limit
+    result = await get_user_study_groups(db, str(current_user.id), skip=skip, limit=limit)
+    
+    # Convertir grupos a StudyGroupResponse
+    groups_response = [StudyGroupResponse(**group) for group in result["groups"]]
+    
+    return StudyGroupsPaginatedResponse(
+        groups=groups_response,
+        total=result["total"],
+        page=result["page"],
+        limit=result["limit"],
+        total_pages=result["total_pages"],
+    )
 
 
 @router.get("/{group_id}", response_model=StudyGroupDetailResponse)
